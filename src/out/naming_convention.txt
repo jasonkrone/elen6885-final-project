@@ -1,0 +1,5 @@
+All subdirectories should follow the naming convention:
+
+    YYYYMMDD_%H%M%S_hyper_parameter_values
+
+For example, 20170524_192314_batch_size_25_lr_1e-4/

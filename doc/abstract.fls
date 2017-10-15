@@ -1,0 +1,6 @@
+PWD /Users/jasonkrone/Developer/elen6885-final-project/doc
+INPUT /usr/local/texlive/2017/texmf.cnf
+INPUT /usr/local/texlive/2017/texmf-dist/web2c/texmf.cnf
+INPUT /usr/local/texlive/2017/texmf-var/web2c/pdftex/latex.fmt
+INPUT abstract.tex
+OUTPUT abstract.log
