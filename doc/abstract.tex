@@ -1,6 +1,13 @@
 \begin{abstract}
-  Why are you doing what you are doing? What did you do?
-  A little extra detail on what you did. What is the contribution of this work?
+We introduce a method for defending against strategically timed adversarial
+attacks on reinforcement learning agents trained by deep reinforcment learning.
+Stratically timed attacks aim to minimize the agents reward by attacking the
+agent with an adversarial example a small fraction of the time. They do this
+by perterbing the state in such a way as to increase the agents probability of
+taking an action, which is estimated to have low return. To detect this attack
+we predict what we expect the state to be at a given time step and look for large
+discrepancies in the action distribution for the predicted state and the "actual" state.
+We then evaluate a variety of action selection strategies to combat the detected attack.
 \end{abstract}
 
 
