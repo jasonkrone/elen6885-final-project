@@ -3,7 +3,7 @@
 \subsection{Preliminaries}
 In this work we assume that the adversarial attack against the agent
 is constructed using a strategically timed attack as put forward by
-Lin et al. [1]. This attack modifies the image $x$ input to a neural network
+Lin et al. (2017). This attack modifies the image $x$ input to a neural network
 $f$ by solving this optimization problem:
 
 $$\min_{\delta}{D_I(x, x + \delta)}$$
@@ -24,7 +24,7 @@ To detect a strategically timed attack we predict what we expect the state $s = 
 to be at a given time step and look for large discrepancies in the
 action distribution for the predicted state and the "actual" state.
 We predict the state $\hat s_t$ we expect to be input to $f$ at time step $t$
-using the video prediction network $g$ put forward by Oh et al. [2]
+using the video prediction network $g$ put forward by Oh et al. (2015)
 conditioned on the history $h_t = \{s_{t-1}, a_{t-2}, \dots, a_0, s_0\}$ of
 previous frames and actions. Then to determine if there is an attack
 at time step $t$, we compare the difference in action distributions
