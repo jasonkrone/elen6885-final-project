@@ -4,7 +4,7 @@ attacks on reinforcement learning agents trained by deep reinforcement learning.
 Strategically timed attacks aim to minimize the agents reward by attacking the
 agent with an adversarial example a small fraction of the time. They do this
 by perturbing the state in such a way as to increase the agents probability of
-taking an action, which is estimated to have low return. To detect this attack
+taking an action which is estimated to have low return. To detect this attack
 we predict what we expect the state to be at a given time step and look for large
 discrepancies in the action distribution for the predicted state and the "actual" state.
 We then evaluate a variety of action selection strategies to combat the detected attack.
