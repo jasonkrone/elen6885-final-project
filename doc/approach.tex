@@ -35,12 +35,15 @@ In summary, our procedure is as follows for each time step $t$:
     \item compute policies for predicted state and current state $\hat \pi( \cdot \vert \hat s_t) = f(\hat s_t)$, $\pi( \cdot \vert s_t) = f(s_t)$
     \item determine that there is an attack if $\KL{\hat \pi( \cdot \vert \hat s_t)}{\pi( \cdot \vert s_t)} > c$
 \end{enumerate}
-where $c$ is a tuned threshold value. We will evaluate the success of a number of methods for selecting action $a_t$
+where $c$ is a tuned threshold value. 
+\\
+
+We will evaluate the success of a number of methods for selecting action $a_t$
 based on $\hat \pi()$ and $\pi()$. Further details are given in the experiments section.
 
 %\begin{itemize}
 %    \item Take action $a = \argmax \hat \pi( \cdot \vert \hat s_t)$
-%    \item Sample $a$ from $\hat \pi( \cdot \vert \hat s_t)$ using the given probabilites.
+%    \item Sample $a$ from $\hat \pi( \cdot \vert \hat s_t)$ using the given probabilities.
 %    \item Take action $a =  \argmax \{a \times \hat \pi( \cdot \vert \hat s_t) + b \times \pi( \cdot \vert s_t) \}$
 %\end{itemize}
 %where $a$ and $b$ are tuned on multiple rollouts of the model. 
