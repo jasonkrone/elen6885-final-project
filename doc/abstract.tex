@@ -1,13 +1,11 @@
 \begin{abstract}
-We introduce a method for defending against strategically timed adversarial
-attacks on reinforcement learning agents trained by deep reinforcement learning.
-Strategically timed attacks aim to minimize the agents reward by attacking the
-agent with an adversarial example a small fraction of the time. They do this
-by perturbing the state in such a way as to increase the agents probability of
-taking an action which is estimated to have low return. To detect this attack
-we predict what we expect the state to be at a given time step and look for large
-discrepancies in the action distribution for the predicted state and the "actual" state.
-We then evaluate a variety of action selection strategies to combat the detected attack.
+Transfer learning has been extremely sucessful in the computer vision domain.
+The is exemplified by the fact that most state-of-the-art deep classification,
+detection, and segmentation networks are first pre-trained on the imagenet dataset
+and then fine tuned on the evaluation dataset. However, in the Reinforcement Learning domain
+transfer learning has not exhibited the same success. Policies learned by agents
+are not easily transferable to new similar tasks. In this work we benchmark
+the performance of the two most sucessful existing policy transfer methods on
+varients of the MuJoCo environment. In addition, we propose our own transfer learning
+method, which IS REALLY REALLY COOL!
 \end{abstract}
-
-
