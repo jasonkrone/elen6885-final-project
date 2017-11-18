@@ -21,8 +21,15 @@ from model import CNNPolicy, MLPPolicy
 from storage import RolloutStorage
 from visualize import visdom_plot
 
-DATE = datetime.today().strftime('%Y%m%d_%H%M%S')
 args = get_args()
+
+FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_algo_'+args.algo+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
+              '_eps_'+str(args.eps)+'_alpha_'+str(args.alpha)+'_gamma_'+str(args.gamma)+\
+              '_tau_'+str(args.tau)+'_entropy_coef_'+str(args.entropy_coef)+\
+              '_value_coef_'+str(args.value_loss_coef)+'_max_grad_norm_'+str(args.max_grad_norm)+\
+              '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)
+args.log_dir = args.log_dir+FILE_PREFIX+'/'
+
 
 assert args.algo in ['a2c', 'ppo', 'acktr']
 if args.algo == 'ppo':
@@ -225,12 +232,7 @@ def main():
             save_model = actor_critic
             if args.cuda:
                 save_model = copy.deepcopy(actor_critic).cpu()
-            file_name =  DATE+'_algo_'+args.algo+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
-                        '_eps_'+str(args.eps)+'_alpha_'+str(args.alpha)+'_gamma_'+str(args.gamma)+\
-                        '_tau_'+str(args.tau)+'_entropy_coef_'+str(args.entropy_coef)+\
-                        '_value_coef_'+str(args.value_loss_coef)+'_max_grad_norm_'+str(args.max_grad_norm)+\
-                        '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
-                        '.pt'
+            file_name = FILE_PREFIX+'.pt'
             #torch.save(save_model, os.path.join(save_path, file_name))
             data = {'update': j, 'model_state_dict': save_model.state_dict(), 'optim_state_dict': optimizer.state_dict()}
             torch.save(data, os.path.join(save_path, file_name))

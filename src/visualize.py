@@ -116,7 +116,7 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1):
     else:
         plt.xticks([1e5, 2e5, 4e5, 6e5, 8e5, 1e5],
                    ["0.1M", "0.2M", "0.4M", "0.6M", "0.8M", "1M"])
-        plt.xlim(0, 1e6)
+        plt.xlim(0, 1e7)
 
     plt.xlabel('Number of Timesteps')
     plt.ylabel('Rewards')
