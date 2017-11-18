@@ -1,3 +1,24 @@
 \section{Related Work}
-
+In recent years there have been a number of works, most consistently from Deep Mind, on methods
+of transfer learning and multi-task learning for Deep Reinforcement Learning agents.
+These works primarily focus on two approaches: knowledge distilation and feature reuse
+across tasks. Knowledge distilation, originally proposed in \cite{seven}, serves as the foundation
+for the methods put forward in \cite{two}, \cite{one}, and \cite{five}.
+\cite{two} extends the distilation method, formulated in \cite{six},
+to Deep Q Networks trained on Atari environments and demonstrates that policy disitilation
+can act as a form of regularization for Deep Q Networks. In \cite{one} the authors propose a novel
+loss function that includes both a policy regression term as well as a feature regression
+term. The former objective is traditionally used for distilation and the latter encourages
+intermediate representations from the student network to match those of the expert network.
+\cite{five} applies distaliation to the multi-task setting by learning a common (distilled)
+policy across a number of 3D environments. In addition, \cite{five} makes use of an entropy penalty and
+utilizes $KL$ and entropy regularization coefficients to trade off between encouraging
+exploration or encouraging actions which have high probability under the distilled policy respectively.
+\cite{three} attack the problem of catastrophic forgetting wherein a networks ability to
+preform the original task used for pre-training is lost after the network undergoes
+a transfer learning process on a target task by reusing task specific hidden representations within a network.
+\cite{four} introduced the environments we use in our experiments. These environments are extensions to the
+mujoco continuous control tasks available in Open AI Gym. Small variations between environments
+such as the strength of gravity and the length of an agent's body parts make the extensions
+an ideal test be for transfer learning and multi-task learning.
 
