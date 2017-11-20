@@ -57,6 +57,10 @@ def get_args():
                         help='disables CUDA training')
     parser.add_argument('--no-vis', action='store_true', default=False,
                         help='disables visdom visualization')
+    parser.add_argument('--finetune', action='store_true', default=False,
+                             help='finetune from previous model checkpoint')
+    parser.add_argument('--checkpoint',type=str, default='',
+                         help='model checkpoint name to initialize finetuning')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
