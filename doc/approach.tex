@@ -1,2 +1,13 @@
 \section{Approach}
-TODO
+We assume that all tasks in this work take form of a Markov Decision Process $(S, A, T, R, \gamma)$ consisting of
+a set of states $S$, a set of actions A, a transition function $T(s' \vert s, a)$ that gives the
+probability of transitioning to state $s \textprime$ when taking action $a$ in state $s$, a reward function
+$R$ that maps state action pairs to a scalar reward, and a discount factor $\gamma$. The behavior of our
+agent is determined by a policy $\pi(a \vert s)$ which maps a state to a distribution over possible actions.
+Furthermore, we definie the optimal approximate policy to be $\pi_{\theta^*}(a \vert s)$ where
+$\theta^* = \arg\max_{\theta} E_{\tau \sim p_\theta(\tau)}[\sum_t r(s_t, a_t)]$ and
+$\pi_\theta(\tau) = p(s_1) \prod_t^T \pi_\theta(a_t \vert s_t)T(s_{t+1} \vert s_t, a_t)$.
+To learn this optimal arppoximate policy we use the advantage actor-critic (A2C) algorithm.
+This algorithm maintains a policy $\pi_\theta$ and a value function estimate $V_{\theta_V}$,
+and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta_V}(s_t, a_t)$
+where $A_{\theta_h}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k})$.
