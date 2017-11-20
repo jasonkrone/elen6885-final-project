@@ -4,10 +4,10 @@ a set of states $S$, a set of actions A, a transition function $T(s' \vert s, a)
 probability of transitioning to state $s \textprime$ when taking action $a$ in state $s$, a reward function
 $R$ that maps state action pairs to a scalar reward, and a discount factor $\gamma$. The behavior of our
 agent is determined by a policy $\pi(a \vert s)$ which maps a state to a distribution over possible actions.
-Furthermore, we definie the optimal approximate policy to be $\pi_{\theta^*}(a \vert s)$ where
+Furthermore, we define the optimal approximate policy to be $\pi_{\theta^*}(a \vert s)$ where
 $\theta^* = \arg\max_{\theta} E_{\tau \sim p_\theta(\tau)}[\sum_t r(s_t, a_t)]$ and
 $\pi_\theta(\tau) = p(s_1) \prod_t^T \pi_\theta(a_t \vert s_t)T(s_{t+1} \vert s_t, a_t)$.
-To learn this optimal arppoximate policy we use the advantage actor-critic (A2C) algorithm.
+To learn this optimal approximate policy we use the advantage actor-critic (A2C) algorithm.
 This algorithm maintains a policy $\pi_\theta$ and a value function estimate $V_{\theta_V}$,
 and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta, \theta_V}(s_t, a_t)$
 where $A_{\theta, \theta_V}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k}) - V_{\theta_V}(s_t)$.
@@ -15,7 +15,7 @@ We use feed forward neural networks to approximate both $\pi_\theta$ and $V_{\th
 
 In our knowledge distilation experiments we transfer knowledge from a teacher model $T$ to a
 student model $S$. In this formulation, we assume that $T$ is the policy of an A2C model that
-has been trained from scratch on a single environment and $S$ is a newly initalized feed forward network. 
+has been trained from scratch on a single environment and $S$ is a newly initialized feed forward network. 
 We perform knowledge transfer by training the student network $S$ on the outputs of $T$, 
 which we relax using a temperature $\tau$. Specifically, if $p_i$ is the probability of taking action 
 $a_i$ in state $s_t$ under $T$,then $S$ is trained to output the target value $\frac{p_i}{\tau}$.
