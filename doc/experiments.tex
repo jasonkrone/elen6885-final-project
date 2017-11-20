@@ -1,20 +1,16 @@
 \section{Experiments}
-We evaluate the following methods of transfer learning using the walker agent on
-three variants of the Open AI gym extensions described in \cite{four}, which
-reduce the size of the agents Foot, Leg, and Thigh by twenty five percent respectively.
+We conduct our experiments using the half-cheetah agent on morphologically modified variants of the Open AI gym extensions described in \cite{four}. We experiment with the following methods of transfer learning: 
 
 \begin{enumerate}
-    \item Fine-tuning a pre-trained policy
-    \item Using the KL divergence variant of knowledge distillation proposed in \cite{two}
-          to train a student networks from the output of a expert network
-    \item Multi-task training of a network on each environment using policy distillation
-          using weighted sampling from the replay buffer
-    \item Training a progressive network with three shared columns of features per layer
+\item Fine-tuning a pre-trained policy: We train a policy from scratch on one (or more) agent(s) and then transfer it to the other agent by freezing the initial layers and only fine-tuning the final layers of the A2C network.
+\item Knowledge distillation from teacher to student: We use an expert network to train a student network (on the same task or different task) using the different  knowledge distillation techniques proposed in \cite{two}. We also experiment with model compression technique on the student network.  
+\item Multi-task learning: We train a network by switching between episodes of different tasks to update the weights of the A2C network.  
+\item Using progressive network \cite{three}:  We train the initial weight columns on the source tasks and then train subsequent columns on the target tasks using lateral connections to facilitate knowledge transfer.  
 \end{enumerate}
 
-To determine the relative success of the above methods we compare against the performance of
-a model trained from scratch on a single environment using the metrics discussed bellow.
-For each of these experiments we train our models for 1,000,000 frames and report the
-mean and standard deviation of the cumulative reward across 20 sample rollouts on each
-target environment as done in \cite{four}. In addition, we plot the learning curves of
+To determine the relative success of the above methods we compare against the performance of a model trained from scratch on a single environment. We report the mean and standard deviation of the cumulative reward across 20 sample rollouts on each target environment as done in \cite{four}. In addition, we plot the learning curves of
 each method in order to determine the sample efficiency of these approaches.
+
+For the milestone, we foussed mainly on HalfCheetahSmallFoot-v0 and HalfCheetahSmallLeg-v0 from  \cite{four} which reduce the size of the agent's foot and leg by $25\%$ respectively and ran experiments using the first method of transfer learning (fine-tuning). We used PyTtorch for implementing our models. Our actor and critic network consists of 2 and 3 fully-connected layers respectively of 64 units each. Since the Mujoco environment is modelled as a continuous control environmnet, the final action is sampled from a gaussian distribution with learnable mean and variance. Training is performed using RMSprop with an initial learning rate of 0.0007 an an update to the A2C network is performed after 5 forward steps. We first train a policy with random initialization of weights for 5M frames on each agent separately. We then transfer this policy on an agent by initializing its weights from the other agent and then fine-tuning only the final layers of the actor-critic networks for 5M frames. 
+
+

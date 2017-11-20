@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import sys
 import time
 from datetime import datetime
 
@@ -27,9 +28,9 @@ FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_algo_'+args.algo+'_en
               '_eps_'+str(args.eps)+'_alpha_'+str(args.alpha)+'_gamma_'+str(args.gamma)+\
               '_tau_'+str(args.tau)+'_entropy_coef_'+str(args.entropy_coef)+\
               '_value_coef_'+str(args.value_loss_coef)+'_max_grad_norm_'+str(args.max_grad_norm)+\
-              '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)
+              '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
+              '_num_frames_'+str(args.num_frames)+ '_finetune_'+str(args.finetune)
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
-
 
 assert args.algo in ['a2c', 'ppo', 'acktr']
 if args.algo == 'ppo':
@@ -47,6 +48,13 @@ except OSError:
     files = glob.glob(os.path.join(args.log_dir, '*.monitor.csv'))
     for f in files:
         os.remove(f)
+
+#to redirect to file
+orig_stdout = sys.stdout
+out_file=args.log_dir+'out.txt'
+f = open(out_file, 'w')
+print('Writing output to'+out_file)
+sys.stdout = f
 
 
 def main():
@@ -74,6 +82,17 @@ def main():
     else:
         actor_critic = MLPPolicy(obs_shape[0], envs.action_space)
 
+    if args.finetune:
+        checkpoint_path=save_path = os.path.join(args.save_dir, args.algo, args.checkpoint)
+        state_dict = torch.load(checkpoint_path)
+        print("Finetuning from checkpoint: %s, at step: %d"%(checkpoint_path,state_dict['update']))
+        actor_critic.load_state_dict(state_dict['model_state_dict'])
+        keep_layers=['v_fc3.weight','v_fc3.bias','a_fc2.weight','a_fc2.bias','dist.fc_mean.weight','dist.fc_mean.bias', 'dist.logstd._bias']
+        for name, param in actor_critic.named_parameters():
+            if name not in keep_layers:
+                param.requires_grad = False
+        for name, param in actor_critic.named_parameters():
+            print('Param name: %s, requires_grad: %d'%(name,param.requires_grad))
     if envs.action_space.__class__.__name__ == "Discrete":
         action_shape = 1
     else:
@@ -83,12 +102,13 @@ def main():
         actor_critic.cuda()
 
     if args.algo == 'a2c':
-        optimizer = optim.RMSprop(actor_critic.parameters(), args.lr, eps=args.eps, alpha=args.alpha)
+        optimizer = optim.RMSprop(filter(lambda p: p.requires_grad,actor_critic.parameters()), args.lr, eps=args.eps, alpha=args.alpha)
     elif args.algo == 'ppo':
         optimizer = optim.Adam(actor_critic.parameters(), args.lr, eps=args.eps)
     elif args.algo == 'acktr':
         optimizer = KFACOptimizer(actor_critic)
 
+    #TO-DO figure out how to restore optimizer parameters when freezing some weights
     rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs.action_space)
     current_obs = torch.zeros(args.num_processes, *obs_shape)
 
@@ -257,3 +277,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.stdout = orig_stdout
+    f.close()
+    print('Finished.')
