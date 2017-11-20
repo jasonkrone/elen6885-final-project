@@ -11,3 +11,12 @@ To learn this optimal arppoximate policy we use the advantage actor-critic (A2C)
 This algorithm maintains a policy $\pi_\theta$ and a value function estimate $V_{\theta_V}$,
 and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta_V}(s_t, a_t)$
 where $A_{\theta_h}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k})$.
+We use feed forward neural networks to approximate both $\pi_\theta$ and $V_{\theta_V}$.
+
+In our knowledge distilation experiments we transfer knowledge from a teacher model $T$ to a
+student model $S$. In this formulation, we assume that $T$ is the policy of an A2C model that
+has been trained from scratch on a single environment and $S$ is a newly initalized feed forward network. 
+We perform knowledge transfer by training the student network $S$ on the outputs of $T$, 
+which we relax using a temperature $\tau$. Specifically, if $p_i$ is the probability of taking action 
+$a_i$ in state $s_t$ under $T$,then $S$ is trained to output the target value $\frac{p_i}{\tau}$.
+
