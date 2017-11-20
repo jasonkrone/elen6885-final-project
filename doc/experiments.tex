@@ -1,2 +1,20 @@
 \section{Experiments}
+We evaluate the following methods of transfer learning using the walker agent on
+three variants of the Open AI gym extensions described in \cite{four}, which
+reduce the size of the agents Foot, Leg, and Thigh by twenty five percent respectively.
 
+\begin{enumerate}
+    \item Fine-tuning a pre-trained policy
+    \item Using the KL divergence variant of knowledge distillation proposed in \cite{two}
+          to train a student networks from the output of a expert network
+    \item Multi-task training of a network on each environment using policy distillation
+          using weighted sampling from the replay buffer
+    \item Training a progressive network with three shared columns of features per layer
+\end{enumerate}
+
+To determine the relative success of the above methods we compare against the performance of
+a model trained from scratch on a single environment using the metrics discussed bellow.
+For each of these experiments we train our models for 1,000,000 frames and report the
+mean and standard deviation of the cumulative reward across 20 sample rollouts on each
+target environment as done in \cite{four}. In addition, we plot the learning curves of
+each method in order to determine the sample efficiency of these approaches.
