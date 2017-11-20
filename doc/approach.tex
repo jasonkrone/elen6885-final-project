@@ -1,5 +1,5 @@
 \section{Approach}
-We assume that all tasks in this work take form of a Markov Decision Process $(S, A, T, R, \gamma)$ consisting of
+We assume that all tasks in this work take the form of a Markov Decision Process $(S, A, T, R, \gamma)$ consisting of
 a set of states $S$, a set of actions A, a transition function $T(s' \vert s, a)$ that gives the
 probability of transitioning to state $s \textprime$ when taking action $a$ in state $s$, a reward function
 $R$ that maps state action pairs to a scalar reward, and a discount factor $\gamma$. The behavior of our
@@ -9,8 +9,8 @@ $\theta^* = \arg\max_{\theta} E_{\tau \sim p_\theta(\tau)}[\sum_t r(s_t, a_t)]$ 
 $\pi_\theta(\tau) = p(s_1) \prod_t^T \pi_\theta(a_t \vert s_t)T(s_{t+1} \vert s_t, a_t)$.
 To learn this optimal arppoximate policy we use the advantage actor-critic (A2C) algorithm.
 This algorithm maintains a policy $\pi_\theta$ and a value function estimate $V_{\theta_V}$,
-and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta_V}(s_t, a_t)$
-where $A_{\theta_h}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k})$.
+and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta, \theta_V}(s_t, a_t)$
+where $A_{\theta, \theta_V}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k}) - V_{\theta_V}(s_t)$.
 We use feed forward neural networks to approximate both $\pi_\theta$ and $V_{\theta_V}$.
 
 In our knowledge distilation experiments we transfer knowledge from a teacher model $T$ to a
