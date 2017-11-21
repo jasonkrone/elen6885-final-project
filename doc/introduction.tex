@@ -1,3 +1,18 @@
 \section{Introduction}
-
-Introduce the problem statement
+Currently, reinforcement learning algorithms are sample inefficient and
+learn from scratch through trail and error over millions of rollouts.
+This sample inefficiency is not too big of a problem when experiments
+are run on simulated environments in which data is cheap and experiments
+can be run faster than real time. However, this scenario is not viable
+in real world use cases such as robotic control where data is more
+expensive to collect and agents are more fragile. One answer to this problem
+is the successful application of transfer learning from simulation to the real world
+as well as between similar tasks. But before we can hope to succeed in transferring
+knowledge to real world tasks we must be able to successfully transfer knowledge
+between simulations that closely mimic the real world. In this work, we take a step in this
+direction by benchmarking the current state-of-art transfer learning methods
+on continuous control tasks using an extended version of the mujoco environment
+\cite{four}. Applying these transfer learning methods to continuous control is
+an important first step as most real world problems deal with continuous action
+spaces and to date most of the research in this area has been on discrete action spaces
+in Atari environments.

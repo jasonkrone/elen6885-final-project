@@ -7,7 +7,8 @@ agent is determined by a policy $\pi(a \vert s)$ which maps a state to a distrib
 Furthermore, we define the optimal approximate policy to be $\pi_{\theta^*}(a \vert s)$ where
 $\theta^* = \arg\max_{\theta} E_{\tau \sim p_\theta(\tau)}[\sum_t r(s_t, a_t)]$ and
 $\pi_\theta(\tau) = p(s_1) \prod_t^T \pi_\theta(a_t \vert s_t)T(s_{t+1} \vert s_t, a_t)$.
-To learn this optimal approximate policy we use the advantage actor-critic (A2C) algorithm.
+To learn this optimal approximate policy we use the advantage actor-critic (A2C) algorithm, which
+is a syncronous implementation of the A3C algorithm introduced in \cite{eight}.
 This algorithm maintains a policy $\pi_\theta$ and a value function estimate $V_{\theta_V}$,
 and it performs updates of the form $\nabla_\theta \pi_\theta(a_t \vert s_t)A_{\theta, \theta_V}(s_t, a_t)$
 where $A_{\theta, \theta_V}(s_t, a_t) = \sum_{i=0}^{k-1} \gamma^ir_{t+i} + \gamma^kV_{\theta_V}(s_{t+k}) - V_{\theta_V}(s_t)$.
