@@ -50,11 +50,12 @@ except OSError:
         os.remove(f)
 
 #to redirect to file
-orig_stdout = sys.stdout
-out_file=args.log_dir+'out.txt'
-f = open(out_file, 'w')
-print('Writing output to'+out_file)
-sys.stdout = f
+if args.redirect:
+    orig_stdout = sys.stdout
+    out_file=args.log_dir+'out.txt'
+    f = open(out_file, 'w')
+    print('Writing output to'+out_file)
+    sys.stdout = f
 
 
 def main():

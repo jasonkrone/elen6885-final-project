@@ -37,7 +37,7 @@ def get_args():
                         help='ppo batch size (default: 64)')
     parser.add_argument('--clip-param', type=float, default=0.2,
                         help='ppo clip parameter (default: 0.2)')
-    parser.add_argument('--num-stack', type=int, default=4,
+    parser.add_argument('--num-stack', type=int, default=1,
                         help='number of frames to stack (default: 4)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='log interval, one log per n updates (default: 10)')
@@ -61,6 +61,8 @@ def get_args():
                              help='finetune from previous model checkpoint')
     parser.add_argument('--checkpoint',type=str, default='',
                          help='model checkpoint name to initialize finetuning')
+    parser.add_argument('--redirect', action='store_true', default=False,
+                         help='redirect output to text file')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
