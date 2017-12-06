@@ -100,9 +100,10 @@ color_defaults = [
 ]
 
 
-def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1):
+def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1, losses=None):
     tx, ty = load_data(folder, smooth, bin_size)
     if tx is None or ty is None:
+        print('returning early')
         return win
 
     fig = plt.figure()
@@ -117,12 +118,12 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1):
         plt.xticks([1e5, 5e5, 10e5, 15e5, 20e5, 25e5, 30e5, 35e5, 40e5, 45e5, 50e5],
                    ["0.1M", "0.5M", "1M", "1.5M", "2M", "2.5M", "3M", "3.5M", "4M", "4.5M", "5M"])
         plt.xlim(0, 5e6)
-        #plt.ylim(0,1500)
 
     plt.xlabel('Number of Timesteps')
-    plt.ylabel('Rewards')
-
-
+    if losses == None:
+        plt.ylabel('Rewards')
+    else:
+        plt.ylabel('Teacher Network Rewards')
     plt.title(game)
     plt.legend(loc=4)
     plt.show()
@@ -134,8 +135,29 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1):
 
     # Show it in visdom
     image = np.transpose(image, (2, 0, 1))
-    return viz.image(image, win=win)
+    if losses == None:
+        return viz.image(image, win)
+    else:
+        win[0] = viz.image(image, win[0])
 
+    losses = np.array(losses)
+    x = np.arange(losses.size)
+    fig = plt.figure()
+    plt.plot(x, losses, label="loss")
+    plt.xlabel('Number of Timesteps')
+    plt.ylabel('Loss')
+    plt.title(game)
+    plt.legend(loc=4)
+    plt.show()
+    plt.draw()
+    image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3, ))
+    plt.close(fig)
+    # Show it in visdom
+    image = np.transpose(image, (2, 0, 1))
+    win[1] = viz.image(image, win[1])
+    print('plotted')
+    return win
 
 if __name__ == "__main__":
     from visdom import Visdom

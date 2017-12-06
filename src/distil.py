@@ -1,8 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from torch.autograd import Variable
 
 import os
+import copy
+import numpy as np
 from datetime import datetime
 
 from model import CNNPolicy, MLPPolicy
@@ -10,13 +14,14 @@ from visualize import visdom_plot
 from storage import RolloutStorage
 from arguments import get_args
 from envs import make_env
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 args = get_args()
 FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
               '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
               '_num_frames_'+str(args.num_frames)
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
-
+print('CUDA:', args.cuda)
 
 torch.manual_seed(args.seed)
 if args.cuda:
@@ -35,10 +40,11 @@ def distil(teacher, student, optimizer, envs, temperature=0.01):
         Note assumes that we are just trying to match the actions of the teacher
         not the values of the critic?
     '''
+    losses = []
     if args.vis:
         from visdom import Visdom
         viz = Visdom()
-        win = None
+        win = [None]*2
 
     obs_shape = envs.observation_space.shape
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
@@ -54,48 +60,49 @@ def distil(teacher, student, optimizer, envs, temperature=0.01):
     # init for training loop
     current_obs = torch.zeros(args.num_processes, *obs_shape)
     obs = envs.reset()
-    current_obs = update_current_obs(obs)
+    current_obs = update_current_obs(obs, current_obs)
     rollouts.observations[0].copy_(current_obs)
 
     if args.cuda:
-        current_obs.cuda()
+        current_obs = current_obs.cuda()
         rollouts.cuda()
 
     for j in range(num_updates):
-        rollouts = sample_rollouts(actor_critic, env, rollouts, episode_rewards, final_rewards, current_obs)
-        next_value = actor_critic(Variable(rollouts.observations[-1], volatile=True))[0].data # value function
+        rollouts, episode_rewards = sample_rollouts(teacher, envs, rollouts, episode_rewards, final_rewards, current_obs)
+        next_value = teacher(Variable(rollouts.observations[-1], volatile=True))[0].data # value function
 
         # no clue what this does
-        if hasattr(actor_critic, 'obs_filter'):
-            actor_critic.obs_filter.update(rollouts.observations[:-1].view(-1, *obs_shape))
+        if hasattr(teacher, 'obs_filter'):
+            teacher.obs_filter.update(rollouts.observations[:-1].view(-1, *obs_shape))
 
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
         # assumes we are using a2c for student
-        # use volatile becuase we won't backprop through teacher
         student_values, student_action_log_probs, student_dist_entropy = \
             student.evaluate_actions(Variable(rollouts.observations[:-1].view(-1, *obs_shape)), Variable(rollouts.actions.view(-1, action_shape)))
         teacher_values, teacher_action_log_probs, teacher_dist_entropy = \
-            teacher.evaluate_actions(Variable(rollouts.observations[:-1].view(-1, *obs_shape)), Variable(rollouts.actions.view(-1, action_shape), volatile=True))
+            teacher.evaluate_actions(Variable(rollouts.observations[:-1].view(-1, *obs_shape)), Variable(rollouts.actions.view(-1, action_shape)))
 
         student_action_probs = torch.exp(student_action_log_probs)
         teacher_action_probs = torch.exp(teacher_action_log_probs) / temperature
         # TODO: could add values to loss also, not sure if that would help
         loss = F.kl_div(student_action_probs, teacher_action_probs).mean()
+        losses.append(loss.data.cpu().numpy())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         if (j+1) % args.save_interval == 0 and args.save_dir != "":
-            save_checkpoint(student, optimizer)
+            save_checkpoint(student, optimizer, j)
         if args.vis and j % args.vis_interval == 0:
             try:
                 # Sometimes monitor doesn't properly flush the outputs
-                win = visdom_plot(viz, win, args.log_dir, args.env_name, 'Knowledge Distilation Reward Plot')
+                print('visualiaing')
+                win = visdom_plot(viz, win, args.log_dir, args.env_name, 'Knowledge Distilation Reward Plot', losses=losses)
             except IOError:
                 pass
 
 
-def save_checkpoint(model, optimizer):
+def save_checkpoint(model, optimizer, j):
     try:
         os.makedirs(args.save_dir)
     except OSError:
@@ -148,13 +155,13 @@ def update_current_obs(obs, current_obs):
     return current_obs
 
 
-def if __name__ == '__main__':
+if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = '1'
 
     if args.vis:
         from visdom import Visdom
         viz = Visdom()
-        win = None
+        win = [None]*2
 
     envs = SubprocVecEnv([
         make_env(args.env_name, args.seed, i, args.log_dir)
@@ -171,12 +178,12 @@ def if __name__ == '__main__':
     else:
         teacher = MLPPolicy(obs_shape[0], envs.action_space)
         # TODO: change student
-        student = CNNPolicy(obs_shape[0], envs.action_space)
+        student = MLPPolicy(obs_shape[0], envs.action_space)
 
     # load teacher model from checkpoint
     assert os.path.exists(args.checkpoint)
     state_dict = torch.load(args.checkpoint)
-    teacher.load_state_dict(state_dict)
+    teacher.load_state_dict(state_dict['model_state_dict'])
 
     if args.cuda:
         student.cuda()
@@ -184,6 +191,6 @@ def if __name__ == '__main__':
 
     # TODO: will probably need to tune defaults since they were for other algos
     # may need filter(lambda p: p.requires_grad,actor_critic.parameters()
-    optimizer = optim.Adam(student.parameter(), args.lr, eps=args.eps)
+    optimizer = optim.RMSprop(filter(lambda p: p.requires_grad, student.parameters()), args.lr, eps=args.eps, alpha=args.alpha)
     distil(teacher, student, optimizer, envs)
 
