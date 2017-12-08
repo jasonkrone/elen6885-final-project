@@ -58,6 +58,13 @@ class FFPolicy(nn.Module):
         action_log_probs, dist_entropy = self.dist.logprobs_and_entropy(x, actions)
         return value, action_log_probs, dist_entropy
 
+    def get_mean_std(self, inputs):
+        value, x = self(inputs)
+        action_mean, action_logstd = self.dist(x)
+        action_std = action_logstd.exp()
+        return action_mean, action_std
+
+
 
 class CNNPolicy(FFPolicy):
     def __init__(self, num_inputs, action_space):

@@ -71,10 +71,14 @@ def load_data(indir, smooth, bin_size):
         result.append([timesteps, datas[i][-1]])
         timesteps += datas[i][1]
 
+    if len(datas) < bin_size:
+        print('len of data: %d, len of result: %d'%(len(datas), len(result)))
     if len(result) < bin_size:
         return [None, None]
 
     x, y = np.array(result)[:, 0], np.array(result)[:, 1]
+    #print('x shape: %s'%x.shape)
+    #print('y shape: %s'%y.shape)
 
     if smooth == 1:
         x, y = smooth_reward_curve(x, y)
@@ -115,9 +119,12 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1, losses=Non
                    ["1M", "2M", "4M", "6M", "8M", "10M"])
         plt.xlim(0, 10e6)
     else:
-        plt.xticks([1e5, 5e5, 10e5, 15e5, 20e5, 25e5, 30e5, 35e5, 40e5, 45e5, 50e5],
-                   ["0.1M", "0.5M", "1M", "1.5M", "2M", "2.5M", "3M", "3.5M", "4M", "4.5M", "5M"])
-        plt.xlim(0, 5e6)
+        plt.xticks([1e5, 2e5, 3e5, 4e5, 5e5, 6e5, 7e5, 8e5, 9e5, 10e5],
+                   ["0.1M", "0.2M", "0.3M", "0.4M", "0.5M", "0.6M", "0.7M", "0.8M", "0.9M", "1.0M"])
+        plt.xlim(0, 1e6)
+        #plt.xticks([1e5, 5e5, 10e5, 15e5, 20e5, 25e5, 30e5, 35e5, 40e5, 45e5, 50e5],
+        #           ["0.1M", "0.5M", "1M", "1.5M", "2M", "2.5M", "3M", "3.5M", "4M", "4.5M", "5M"])
+        #plt.xlim(0, 5e6)
 
     plt.xlabel('Number of Timesteps')
     if losses == None:
