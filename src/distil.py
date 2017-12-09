@@ -10,9 +10,10 @@ import numpy as np
 import math
 import time
 from datetime import datetime
+import pickle
 
 from model import CNNPolicy, MLPPolicy
-from visualize import visdom_plot
+from visualize import visdom_plot, visdom_data_plot
 from storage import RolloutStorage
 from arguments import get_args
 from envs import make_env
@@ -21,7 +22,9 @@ from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 args = get_args()
 FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
               '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
-              '_num_frames_'+str(args.num_frames)+'_frac_student_rollouts_'+str(args.frac_student_rollouts)
+              '_num_frames_'+str(args.num_frames)+'_frac_student_rollouts_'+str(args.frac_student_rollouts)+\
+              '_distil'
+
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
 log_dir_teacher = args.log_dir + 'teacher/'
 log_dir_student = args.log_dir + 'student/'
@@ -55,7 +58,8 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
     if args.vis:
         from visdom import Visdom
         viz = Visdom()
-        win = None
+        win1 = None
+        win2 = None
 
     obs_shape = envs_teacher.observation_space.shape
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
@@ -114,6 +118,7 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
 
         if (j+1) % args.save_interval == 0 and args.save_dir != "":
             save_checkpoint(student, optimizer, j)
+            save_data(losses)
 
         student_rollouts, student_episode_rewards, student_final_rewards, student_current_obs = sample_rollouts(
             student, envs_student, student_rollouts, student_episode_rewards, student_final_rewards, student_current_obs)
@@ -138,7 +143,8 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
             try:
                 # Sometimes monitor doesn't properly flush the outputs
                 print('visualizing')
-                win = visdom_plot(viz, win, log_dir_student, args.env_name, 'Knowledge Distilation Reward Plot')
+                win1 = visdom_plot(viz, win1, log_dir_student, args.env_name, 'Knowledge Distilation Reward Plot')
+                win2 = visdom_data_plot(viz, win2, args.env_name, 'Knowledge Distilation Reward Plot', losses, 'loss')
             except IOError:
                 pass
 
@@ -161,6 +167,14 @@ def save_checkpoint(model, optimizer, j):
     data = {'update': j, 'model_state_dict': save_model.state_dict(), 'optim_state_dict': optimizer.state_dict()}
     torch.save(data, os.path.join(args.save_dir, file_name))
 
+def save_data(data):
+    try:
+        os.makedirs(args.save_dir)
+    except OSError:
+        pass
+    file_name = FILE_PREFIX+'_loss.pkl'
+    with open(os.path.join(args.save_dir, file_name), 'wb') as f:
+        pickle.dump(data, f)
 
 def sample_rollouts(actor_critic, env, rollouts, episode_rew, final_rew, curr_obs):
     for step in range(args.num_steps):
@@ -203,11 +217,6 @@ def update_current_obs(obs, current_obs, env):
 
 if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = '1'
-
-    if args.vis:
-        from visdom import Visdom
-        viz = Visdom()
-        win = [None]*2
 
     envs_student = SubprocVecEnv([
         make_env(args.env_name, args.seed, i, log_dir_student)

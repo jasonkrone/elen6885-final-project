@@ -77,8 +77,6 @@ def load_data(indir, smooth, bin_size):
         return [None, None]
 
     x, y = np.array(result)[:, 0], np.array(result)[:, 1]
-    #print('x shape: %s'%x.shape)
-    #print('y shape: %s'%y.shape)
 
     if smooth == 1:
         x, y = smooth_reward_curve(x, y)
@@ -87,6 +85,7 @@ def load_data(indir, smooth, bin_size):
         y = medfilt(y, kernel_size=9)
 
     x, y = fix_point(x, y, bin_size)
+
     return [x, y]
 
 
@@ -119,12 +118,12 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1, losses=Non
                    ["1M", "2M", "4M", "6M", "8M", "10M"])
         plt.xlim(0, 10e6)
     else:
-        plt.xticks([1e5, 2e5, 3e5, 4e5, 5e5, 6e5, 7e5, 8e5, 9e5, 10e5],
-                   ["0.1M", "0.2M", "0.3M", "0.4M", "0.5M", "0.6M", "0.7M", "0.8M", "0.9M", "1.0M"])
-        plt.xlim(0, 1e6)
-        #plt.xticks([1e5, 5e5, 10e5, 15e5, 20e5, 25e5, 30e5, 35e5, 40e5, 45e5, 50e5],
-        #           ["0.1M", "0.5M", "1M", "1.5M", "2M", "2.5M", "3M", "3.5M", "4M", "4.5M", "5M"])
-        #plt.xlim(0, 5e6)
+        #plt.xticks([1e5, 2e5, 3e5, 4e5, 5e5, 6e5, 7e5, 8e5, 9e5, 10e5],
+        #           ["0.1M", "0.2M", "0.3M", "0.4M", "0.5M", "0.6M", "0.7M", "0.8M", "0.9M", "1.0M"])
+        #plt.xlim(0, 1e6)
+        plt.xticks([1e5, 5e5, 10e5, 15e5, 20e5, 25e5, 30e5, 35e5, 40e5, 45e5, 50e5],
+                   ["0.1M", "0.5M", "1M", "1.5M", "2M", "2.5M", "3M", "3.5M", "4M", "4.5M", "5M"])
+        plt.xlim(0, 5e6)
 
     plt.xlabel('Number of Timesteps')
     if losses == None:
@@ -163,6 +162,37 @@ def visdom_plot(viz, win, folder, game, name, bin_size=100, smooth=1, losses=Non
     # Show it in visdom
     image = np.transpose(image, (2, 0, 1))
     win[1] = viz.image(image, win[1])
+    print('plotted')
+    return win
+
+def visdom_data_plot(viz, win, game, name, data, ylabel, bin_size=100, smooth = 1):
+
+    data = np.array(data)[:, 0]
+    x = np.arange(data.shape[0])
+    
+    if data.shape[0] < bin_size:
+        return win
+
+    if smooth == 1:
+        x, data = smooth_reward_curve(x, data)
+    x, data = fix_point(x, data, bin_size)
+    
+    fig = plt.figure()
+    plt.plot(x, data, label=ylabel)
+    plt.xlabel('Number of Timesteps')
+    plt.ylabel(ylabel)
+    plt.title(game)
+    plt.legend(loc=4)
+    plt.show()
+    plt.draw()
+    
+    image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3, ))
+    plt.close(fig)
+    
+    # Show it in visdom
+    image = np.transpose(image, (2, 0, 1))
+    win = viz.image(image, win)
     print('plotted')
     return win
 
