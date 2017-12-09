@@ -27,29 +27,19 @@ FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_env_'+args.env_name+'
 
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
 log_dir_teacher = args.log_dir + 'teacher/'
-log_dir_student = args.log_dir + 'student/'
+log_dir_student_train = args.log_dir + 'student_train/'
+log_dir_student_test  = args.log_dir + 'student_test/'
+
 print('CUDA:', args.cuda)
 
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
-try:
-    os.makedirs(log_dir_teacher)
-except OSError:
-    files = glob.glob(os.path.join(log_dir_teacher, '*.monitor.csv'))
-    for f in files:
-        os.remove(f)
-try:
-    os.makedirs(log_dir_student)
-except OSError:
-    files = glob.glob(os.path.join(log_dir_student, '*.monitor.csv'))
-    for f in files:
-        os.remove(f)
 
 num_updates = int(args.num_frames) // args.num_steps // args.num_processes
 
 
-def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=0.01):
+def distil(teacher, student, optimizer, envs_teacher, envs_student_train, envs_student_test):
     ''' Trains the student on the teachers soft targets
         Note assumes that we are just trying to match the actions of the teacher
         not the values of the critic?
@@ -68,49 +58,50 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
     else:
         action_shape = envs_teacher.action_space.shape[0]
 
-    # create data storage
-    rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs_teacher.action_space)
-    episode_rewards = torch.zeros([args.num_processes, 1])
-    final_rewards = torch.zeros([args.num_processes, 1])
-    # init for training loop
-    current_obs = torch.zeros(args.num_processes, *obs_shape)
-    obs = envs_teacher.reset()
-    current_obs = update_current_obs(obs, current_obs, envs_teacher)
-    rollouts.observations[0].copy_(current_obs)
+    teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs = \
+        get_storage(envs_teacher, args.num_steps, args.num_processes, obs_shape, envs_teacher.action_space)
 
-    #for evaluating student
-    student_rollouts = RolloutStorage(args.num_steps, args.num_processes, obs_shape, envs_student.action_space)
-    student_episode_rewards = torch.zeros([args.num_processes, 1])
-    student_final_rewards = torch.zeros([args.num_processes, 1])
-    # init for training loop
-    student_current_obs = torch.zeros(args.num_processes, *obs_shape)
-    student_obs = envs_student.reset()
-    student_current_obs = update_current_obs(student_obs, student_current_obs, envs_student)
-    student_rollouts.observations[0].copy_(student_current_obs)
+    student_rollouts_train, student_episode_rewards_train, student_final_rewards_train, student_current_obs_train = \
+        get_storage(envs_student_train, args.num_steps, args.num_processes, obs_shape, envs_student_train.action_space)
+
+    student_rollouts_test, student_episode_rewards_test, student_final_rewards_test, student_current_obs_test = \
+        get_storage(envs_student_test, args.num_steps, args.num_processes, obs_shape, envs_student_test.action_space)
 
     if args.cuda:
-        current_obs = current_obs.cuda()
-        rollouts.cuda()
-        student_current_obs = student_current_obs.cuda()
-        student_rollouts.cuda()
+        teacher_current_obs = teacher_current_obs.cuda()
+        teacher_rollouts.cuda()
+        student_current_obs_train = student_current_obs_train.cuda()
+        student_rollouts_train.cuda()
+        student_current_obs_test = student_current_obs_test.cuda()
+        student_rollouts_test.cuda()
 
     start = time.time()
     for j in range(num_updates):
-        rollouts, episode_rewards, final_rewards, current_obs = sample_rollouts(
-            teacher, envs_teacher, rollouts, episode_rewards, final_rewards, current_obs)
+        # sample trajectory using student
+        student_arguments_train = (student, envs_student_train, student_rollouts_train, student_episode_rewards_train, \
+                                   student_final_rewards_train, student_current_obs_train)
+        student_rollouts_train, student_episode_rewards_train, student_final_rewards_train, student_current_obs_train = \
+            sample_rollouts(*student_arguments_train)
+
+        # sample trajectory using teacher
+        teacher_arguments = (teacher, envs_teacher, teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs)
+        teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs = sample_rollouts(*teacher_arguments)
+
+        # use student trajectory
+        if np.random.rand() < args.frac_student_rollouts:
+            rollouts = student_rollouts_train
+        # use teacher trajectory
+        else:
+            rollouts = teacher_rollouts
+
         next_value = teacher(Variable(rollouts.observations[-1], volatile=True))[0].data # value function
         # no clue what this does
         if hasattr(teacher, 'obs_filter'):
             teacher.obs_filter.update(rollouts.observations[:-1].view(-1, *obs_shape))
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
 
-        mu_student, std_student = student.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
-        mu_teacher, std_teacher = teacher.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
-        if args.distil_loss == 'KL':
-            loss = KL_MV_gaussian(mu_teacher, std_teacher, mu_student, std_student)
-        elif args.distil_loss == 'MSE':
-            loss = F.mse_loss(mu_teacher, mu_student) + F.mse_loss(std_teacher, std_student)
-
+        # get loss and take grad step on student params
+        loss = get_loss(student, teacher, rollouts, obs_shape)
         losses.append(loss.data.cpu().numpy())
         optimizer.zero_grad()
         loss.backward()
@@ -120,39 +111,59 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
             save_checkpoint(student, optimizer, j)
             save_data(losses)
 
-        student_rollouts, student_episode_rewards, student_final_rewards, student_current_obs = sample_rollouts(
-            student, envs_student, student_rollouts, student_episode_rewards, student_final_rewards, student_current_obs)
-        student_next_value = student(Variable(student_rollouts.observations[-1], volatile=True))[0].data # value function
+        # collect test trajectories
+        student_arguments_test = (student, envs_student_test, student_rollouts_test, student_episode_rewards_test, \
+                                   student_final_rewards_test, student_current_obs_test)
+        student_rollouts_test, student_episode_rewards_test, student_final_rewards_test, student_current_obs_test = \
+            sample_rollouts(*student_arguments_test)
+        student_next_value_test = student(Variable(student_rollouts_test.observations[-1], volatile=True))[0].data # value function
         if hasattr(student, 'obs_filter'):
-            student.obs_filter.update(student_rollouts.observations[:-1].view(-1, *obs_shape))
-        student_rollouts.compute_returns(student_next_value, args.use_gae, args.gamma, args.tau)
+            student.obs_filter.update(student_rollouts_test.observations[:-1].view(-1, *obs_shape))
+        student_rollouts_test.compute_returns(student_next_value_test, args.use_gae, args.gamma, args.tau)
 
+        # log student performance
         if j % args.log_interval == 0:
             end = time.time()
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
-            print("Updates {}, num timesteps {}, FPS {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, KL loss {:.5f}".
+            print("Updates {}, num timesteps {}, FPS {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, loss {:.5f}".
                 format(j, total_num_steps,
                        int(total_num_steps / (end - start)),
-                       student_final_rewards.mean(),
-                       student_final_rewards.median(),
-                       student_final_rewards.min(),
-                       student_final_rewards.max(),
+                       student_final_rewards_test.mean(),
+                       student_final_rewards_test.median(),
+                       student_final_rewards_test.min(),
+                       student_final_rewards_test.max(),
                        loss.data[0]))
 
         if args.vis and j % args.vis_interval == 0:
             try:
                 # Sometimes monitor doesn't properly flush the outputs
                 print('visualizing')
-                win1 = visdom_plot(viz, win1, log_dir_student, args.env_name, 'Knowledge Distilation Reward Plot')
+                win1 = visdom_plot(viz, win1, log_dir_student_test, args.env_name, 'Knowledge Distilation Reward Plot')
                 win2 = visdom_data_plot(viz, win2, args.env_name, 'Knowledge Distilation Reward Plot', losses, 'loss')
             except IOError:
                 pass
+
 
 def KL_MV_gaussian(mu_p, std_p, mu_q, std_q):
     kl = (std_q/std_p).log() + (std_p.pow(2)+(mu_p-mu_q).pow(2))/(2*std_q.pow(2)) - 0.5
     kl = kl.sum(1, keepdim=True) #sum across all dimensions
     kl = kl.mean() #take mean across all steps
     return kl
+
+
+def get_loss(student, teacher, rollouts, obs_shape):
+    mu_student, std_student = student.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
+    value_student, _ = student(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
+    mu_teacher, std_teacher = teacher.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
+    value_teacher, _ = teacher(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
+
+    loss = F.mse_loss(value_student, value_teacher)
+    if args.distil_loss == 'KL':
+        loss += KL_MV_gaussian(mu_teacher, std_teacher, mu_student, std_student)
+    elif args.distil_loss == 'MSE':
+        loss += F.mse_loss(mu_teacher, mu_student) + F.mse_loss(std_teacher, std_student)
+    return loss
+
 
 def save_checkpoint(model, optimizer, j):
     try:
@@ -167,6 +178,7 @@ def save_checkpoint(model, optimizer, j):
     data = {'update': j, 'model_state_dict': save_model.state_dict(), 'optim_state_dict': optimizer.state_dict()}
     torch.save(data, os.path.join(args.save_dir, file_name))
 
+
 def save_data(data):
     try:
         os.makedirs(args.save_dir)
@@ -175,6 +187,7 @@ def save_data(data):
     file_name = FILE_PREFIX+'_loss.pkl'
     with open(os.path.join(args.save_dir, file_name), 'wb') as f:
         pickle.dump(data, f)
+
 
 def sample_rollouts(actor_critic, env, rollouts, episode_rew, final_rew, curr_obs):
     for step in range(args.num_steps):
@@ -206,6 +219,17 @@ def sample_rollouts(actor_critic, env, rollouts, episode_rew, final_rew, curr_ob
     return rollouts, episode_rew, final_rew, curr_obs
 
 
+def get_storage(env, num_steps, num_processes, obs_shape, action_space):
+    rollouts = RolloutStorage(num_steps, num_processes, obs_shape, action_space)
+    episode_rewards = torch.zeros([args.num_processes, 1])
+    final_rewards = torch.zeros([args.num_processes, 1])
+    current_obs = torch.zeros(args.num_processes, *obs_shape)
+    obs = env.reset()
+    current_obs = update_current_obs(obs, current_obs, env)
+    rollouts.observations[0].copy_(current_obs)
+    return rollouts, episode_rewards, final_rewards, current_obs
+
+
 def update_current_obs(obs, current_obs, env):
     shape_dim0 = env.observation_space.shape[0]
     obs = torch.from_numpy(obs).float()
@@ -215,11 +239,29 @@ def update_current_obs(obs, current_obs, env):
     return current_obs
 
 
+def make_dir(path):
+    try:
+        os.makedirs(path)
+    except OSError:
+        files = glob.glob(os.path.join(path, '*.monitor.csv'))
+        for f in files:
+            os.remove(f)
+
+
 if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = '1'
 
-    envs_student = SubprocVecEnv([
-        make_env(args.env_name, args.seed, i, log_dir_student)
+    make_dir(log_dir_teacher)
+    make_dir(log_dir_student_train)
+    make_dir(log_dir_student_test)
+
+    envs_student_train = SubprocVecEnv([
+        make_env(args.env_name, args.seed, i, log_dir_student_train)
+        for i in range(args.num_processes)
+    ])
+
+    envs_student_test = SubprocVecEnv([
+        make_env(args.env_name, args.seed, i, log_dir_student_test)
         for i in range(args.num_processes)
     ])
 
@@ -234,11 +276,11 @@ if __name__ == '__main__':
     if len(envs_teacher.observation_space.shape) == 3:
         teacher = CNNPolicy(obs_shape[0], envs_teacher.action_space)
         # TODO: change student
-        student = CNNPolicy(obs_shape[0], envs_student.action_space)
+        student = CNNPolicy(obs_shape[0], envs_student_train.action_space)
     else:
         teacher = MLPPolicy(obs_shape[0], envs_teacher.action_space)
         # TODO: change student
-        student = MLPPolicy(obs_shape[0], envs_student.action_space)
+        student = MLPPolicy(obs_shape[0], envs_student_train.action_space)
 
     # load teacher model from checkpoint
     assert os.path.exists(args.checkpoint)
@@ -253,5 +295,5 @@ if __name__ == '__main__':
     # TODO: will probably need to tune defaults since they were for other algos
     # may need filter(lambda p: p.requires_grad,actor_critic.parameters()
     optimizer = optim.RMSprop(filter(lambda p: p.requires_grad, student.parameters()), args.lr, eps=args.eps, alpha=args.alpha)
-    distil(teacher, student, optimizer, envs_teacher, envs_student)
+    distil(teacher, student, optimizer, envs_teacher, envs_student_train, envs_student_test)
 
