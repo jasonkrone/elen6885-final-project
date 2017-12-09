@@ -63,6 +63,8 @@ def get_args():
                          help='model checkpoint name to initialize finetuning')
     parser.add_argument('--redirect', action='store_true', default=False,
                          help='redirect output to text file')
+    parser.add_argument('--frac-student-rollouts', type=float, default=0.0)
+    parser.add_argument('--distil-loss', type=str, default='KL')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

@@ -21,7 +21,7 @@ from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 args = get_args()
 FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
               '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
-              '_num_frames_'+str(args.num_frames)
+              '_num_frames_'+str(args.num_frames)+'_frac_student_rollouts_'+str(args.frac_student_rollouts)
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
 log_dir_teacher = args.log_dir + 'teacher/'
 log_dir_student = args.log_dir + 'student/'
@@ -83,7 +83,7 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
     student_obs = envs_student.reset()
     student_current_obs = update_current_obs(student_obs, student_current_obs, envs_student)
     student_rollouts.observations[0].copy_(student_current_obs)
-    
+
     if args.cuda:
         current_obs = current_obs.cuda()
         rollouts.cuda()
@@ -102,7 +102,10 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student, temperature=
 
         mu_student, std_student = student.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
         mu_teacher, std_teacher = teacher.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
-        loss = KL_MV_gaussian(mu_teacher, std_teacher, mu_student, std_student)
+        if args.distil_loss == 'KL':
+            loss = KL_MV_gaussian(mu_teacher, std_teacher, mu_student, std_student)
+        elif args.distil_loss == 'MSE':
+            loss = F.mse_loss(mu_teacher, mu_student) + F.mse_loss(std_teacher, std_student)
 
         losses.append(loss.data.cpu().numpy())
         optimizer.zero_grad()
