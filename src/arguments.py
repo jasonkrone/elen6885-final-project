@@ -47,24 +47,25 @@ def get_args():
                         help='vis interval, one log per n updates (default: 100)')
     parser.add_argument('--num-frames', type=int, default=10e6,
                         help='number of frames to train (default: 10e6)')
-    parser.add_argument('--env-name', default='PongNoFrameskip-v4',
+    parser.add_argument('--env-name', nargs='*',
                         help='environment to train on (default: PongNoFrameskip-v4)')
-    parser.add_argument('--log-dir', default='/mnt/dir/elen6885-final-project/log/',
-                        help='directory to save agent logs (default: /tmp/gym)')
-    parser.add_argument('--save-dir', default='/mnt/dir/elen6885-final-project/checkpoints',
-                        help='directory to save agent logs (default: ./trained_models/)')
+    parser.add_argument('--log-dir', default='../log/',
+                        help='directory to save agent logs')
+    parser.add_argument('--save-dir', default='../checkpoints',
+                        help='directory to save agent logs')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--no-vis', action='store_true', default=False,
                         help='disables visdom visualization')
     parser.add_argument('--finetune', action='store_true', default=False,
                              help='finetune from previous model checkpoint')
-    parser.add_argument('--checkpoint',type=str, default='',
+    parser.add_argument('--checkpoint', nargs='*',
                          help='model checkpoint name to initialize finetuning')
     parser.add_argument('--redirect', action='store_true', default=False,
                          help='redirect output to text file')
     parser.add_argument('--frac-student-rollouts', type=float, default=0.0)
-    parser.add_argument('--distil-loss', type=str, default='KL')
+    parser.add_argument('--distil-loss', type=str, default='KL', help='KL or MSE')
+    parser.add_argument('--num-heads', type=int, default='1')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

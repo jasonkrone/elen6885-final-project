@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 import pickle
 
-from model import CNNPolicy, MLPPolicy
+from model import CNNPolicy, MLPPolicy, MultiHead_MLPPolicy
 from visualize import visdom_plot, visdom_data_plot
 from storage import RolloutStorage
 from arguments import get_args
@@ -20,15 +20,24 @@ from envs import make_env
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 args = get_args()
-FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S')+'_env_'+args.env_name+'_lr_'+str(args.lr)+\
-              '_num_steps_'+str(args.num_steps)+'_num_stack_'+str(args.num_stack)+\
-              '_num_frames_'+str(args.num_frames)+'_frac_student_rollouts_'+str(args.frac_student_rollouts)+\
-              '_distil'
+
+if args.num_heads == 1:
+    env_name = args.env_name[0]
+elif args.num_heads == 2:
+    env_name = args.env_name[0] + args.env_name[1]
+
+FILE_PREFIX = datetime.today().strftime('%Y%m%d_%H%M%S') + '_env_'+env_name+'_lr_'+str(args.lr)+\
+              '_num_steps_'+str(args.num_steps)+'_num_frames_'+str(args.num_frames)+\
+              '_frac_student_rollouts_'+str(args.frac_student_rollouts)+\
+              '_distil'+'_num_heads_'+str(args.num_heads)
+
+assert len(args.env_name) == args.num_heads
+assert len(args.checkpoint) == args.num_heads
 
 args.log_dir = args.log_dir+FILE_PREFIX+'/'
-log_dir_teacher = args.log_dir + 'teacher/'
-log_dir_student_train = args.log_dir + 'student_train/'
-log_dir_student_test  = args.log_dir + 'student_test/'
+log_dir_teacher = [args.log_dir + 'teacher_'+env_name+'/' for env_name in args.env_name]
+log_dir_student_train = [args.log_dir + 'student_train_'+env_name+'/' for env_name in args.env_name]
+log_dir_student_test  = [args.log_dir + 'student_test_'+env_name+'/' for env_name in args.env_name]
 
 print('CUDA:', args.cuda)
 
@@ -48,60 +57,58 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student_train, envs_s
     if args.vis:
         from visdom import Visdom
         viz = Visdom()
-        win1 = None
-        win2 = None
+        win1 = [None]*args.num_heads #student reward plots
+        win2 = None #loss plots
 
-    obs_shape = envs_teacher.observation_space.shape
+    obs_shape = envs_teacher[0].observation_space.shape
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
-    if envs_teacher.action_space.__class__.__name__ == "Discrete":
+    if envs_teacher[0].action_space.__class__.__name__ == "Discrete":
         action_shape = 1
     else:
-        action_shape = envs_teacher.action_space.shape[0]
+        action_shape = envs_teacher[0].action_space.shape[0]
 
-    teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs = \
-        get_storage(envs_teacher, args.num_steps, args.num_processes, obs_shape, envs_teacher.action_space)
-
-    student_rollouts_train, student_episode_rewards_train, student_final_rewards_train, student_current_obs_train = \
-        get_storage(envs_student_train, args.num_steps, args.num_processes, obs_shape, envs_student_train.action_space)
-
-    student_rollouts_test, student_episode_rewards_test, student_final_rewards_test, student_current_obs_test = \
-        get_storage(envs_student_test, args.num_steps, args.num_processes, obs_shape, envs_student_test.action_space)
+    teacher_storage = []
+    student_storage_train = []
+    student_storage_test = []
+    for i in range(args.num_heads):
+        teacher_storage.append(get_storage(envs_teacher[i], args.num_steps, args.num_processes, obs_shape, envs_teacher[i].action_space))
+        student_storage_train.append(get_storage(envs_student_train[i], args.num_steps, args.num_processes, obs_shape, envs_student_train[i].action_space))
+        student_storage_test.append(get_storage(envs_student_test[i], args.num_steps, args.num_processes, obs_shape, envs_student_test[i].action_space))
 
     if args.cuda:
-        teacher_current_obs = teacher_current_obs.cuda()
-        teacher_rollouts.cuda()
-        student_current_obs_train = student_current_obs_train.cuda()
-        student_rollouts_train.cuda()
-        student_current_obs_test = student_current_obs_test.cuda()
-        student_rollouts_test.cuda()
-
+        for i in range(args.num_heads):
+            teacher_storage[i]['current_obs'] = teacher_storage[i]['current_obs'].cuda()
+            student_storage_train[i]['current_obs'] = student_storage_train[i]['current_obs'].cuda()
+            student_storage_test[i]['current_obs'] = student_storage_test[i]['current_obs'].cuda()
+            teacher_storage[i]['rollouts'].cuda()
+            student_storage_train[i]['rollouts'].cuda()
+            student_storage_test[i]['rollouts'].cuda()
+    
     start = time.time()
+    teacher_student_prob = [1-args.frac_student_rollouts, args.frac_student_rollouts]
     for j in range(num_updates):
-        # sample trajectory using student
-        student_arguments_train = (student, envs_student_train, student_rollouts_train, student_episode_rewards_train, \
-                                   student_final_rewards_train, student_current_obs_train)
-        student_rollouts_train, student_episode_rewards_train, student_final_rewards_train, student_current_obs_train = \
-            sample_rollouts(*student_arguments_train)
-
-        # sample trajectory using teacher
-        teacher_arguments = (teacher, envs_teacher, teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs)
-        teacher_rollouts, teacher_episode_rewards, teacher_final_rewards, teacher_current_obs = sample_rollouts(*teacher_arguments)
-
-        # use student trajectory
-        if np.random.rand() < args.frac_student_rollouts:
-            rollouts = student_rollouts_train
-        # use teacher trajectory
+        head = np.random.randint(args.num_heads)
+        roll = np.random.choice(2, p=teacher_student_prob)
+        #print('j: %d, Head: %d, Roll: %d'%(j,head, roll))
+        
+        if roll == 1: 
+            # use student trajectory
+            sample_rollouts(student, envs_student_train[head], student_storage_train[head], head)
+            rollouts = student_storage_train[head]['rollouts'] 
         else:
-            rollouts = teacher_rollouts
-
-        next_value = teacher(Variable(rollouts.observations[-1], volatile=True))[0].data # value function
+            # use teacher trajectory
+            sample_rollouts(teacher[head], envs_teacher[head], teacher_storage[head])
+            rollouts = teacher_storage[head]['rollouts'] 
+            
+        next_value = teacher[head](Variable(rollouts.observations[-1], volatile=True))[0].data # value function
+        
         # no clue what this does
-        if hasattr(teacher, 'obs_filter'):
-            teacher.obs_filter.update(rollouts.observations[:-1].view(-1, *obs_shape))
+        if hasattr(teacher[head], 'obs_filter'):
+            teacher[head].obs_filter.update(rollouts.observations[:-1].view(-1, *obs_shape))
         rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.tau)
 
         # get loss and take grad step on student params
-        loss = get_loss(student, teacher, rollouts, obs_shape)
+        loss = get_loss(student, teacher[head], rollouts, obs_shape, head)
         losses.append(loss.data.cpu().numpy())
         optimizer.zero_grad()
         loss.backward()
@@ -112,34 +119,33 @@ def distil(teacher, student, optimizer, envs_teacher, envs_student_train, envs_s
             save_data(losses)
 
         # collect test trajectories
-        student_arguments_test = (student, envs_student_test, student_rollouts_test, student_episode_rewards_test, \
-                                   student_final_rewards_test, student_current_obs_test)
-        student_rollouts_test, student_episode_rewards_test, student_final_rewards_test, student_current_obs_test = \
-            sample_rollouts(*student_arguments_test)
-        student_next_value_test = student(Variable(student_rollouts_test.observations[-1], volatile=True))[0].data # value function
+        sample_rollouts(student, envs_student_test[head], student_storage_test[head], head)
+        student_next_value_test = student(Variable(student_storage_test[head]['rollouts'].observations[-1], volatile=True))[0].data # value function
         if hasattr(student, 'obs_filter'):
-            student.obs_filter.update(student_rollouts_test.observations[:-1].view(-1, *obs_shape))
-        student_rollouts_test.compute_returns(student_next_value_test, args.use_gae, args.gamma, args.tau)
+            student.obs_filter.update(student_storage_test[head]['rollouts'].observations[:-1].view(-1, *obs_shape))
+        student_storage_test[head]['rollouts'].compute_returns(student_next_value_test, args.use_gae, args.gamma, args.tau)
 
         # log student performance
         if j % args.log_interval == 0:
             end = time.time()
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
-            print("Updates {}, num timesteps {}, FPS {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, loss {:.5f}".
-                format(j, total_num_steps,
+            for head in range(args.num_heads):
+                print("Head {} : Updates {}, num timesteps {}, FPS {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, loss {:.5f}".
+                format(head, j, total_num_steps,
                        int(total_num_steps / (end - start)),
-                       student_final_rewards_test.mean(),
-                       student_final_rewards_test.median(),
-                       student_final_rewards_test.min(),
-                       student_final_rewards_test.max(),
+                       student_storage_test[head]['final_rewards'].mean(),
+                       student_storage_test[head]['final_rewards'].median(),
+                       student_storage_test[head]['final_rewards'].min(),
+                       student_storage_test[head]['final_rewards'].max(),
                        loss.data[0]))
 
         if args.vis and j % args.vis_interval == 0:
             try:
                 # Sometimes monitor doesn't properly flush the outputs
                 print('visualizing')
-                win1 = visdom_plot(viz, win1, log_dir_student_test, args.env_name, 'Knowledge Distilation Reward Plot')
-                win2 = visdom_data_plot(viz, win2, args.env_name, 'Knowledge Distilation Reward Plot', losses, 'loss')
+                for head in range(args.num_heads):
+                    win1[head] = visdom_plot(viz, win1[head], log_dir_student_test[head], args.env_name[head], 'Distilation Reward for Student')
+                win2 = visdom_data_plot(viz, win2, args.env_name, 'Distilation Loss Plot', losses, 'loss')
             except IOError:
                 pass
 
@@ -151,13 +157,14 @@ def KL_MV_gaussian(mu_p, std_p, mu_q, std_q):
     return kl
 
 
-def get_loss(student, teacher, rollouts, obs_shape):
-    mu_student, std_student = student.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
+def get_loss(student, teacher, rollouts, obs_shape, head):
+    mu_student, std_student = student.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)),head)
     value_student, _ = student(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
     mu_teacher, std_teacher = teacher.get_mean_std(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
     value_teacher, _ = teacher(Variable(rollouts.observations[:-1].view(-1, *obs_shape)))
 
-    loss = F.mse_loss(value_student, value_teacher)
+    loss = 0
+    #loss = F.mse_loss(value_student, value_teacher)
     if args.distil_loss == 'KL':
         loss += KL_MV_gaussian(mu_teacher, std_teacher, mu_student, std_student)
     elif args.distil_loss == 'MSE':
@@ -189,34 +196,36 @@ def save_data(data):
         pickle.dump(data, f)
 
 
-def sample_rollouts(actor_critic, env, rollouts, episode_rew, final_rew, curr_obs):
+def sample_rollouts(actor_critic, env, storage, head=-1):
     for step in range(args.num_steps):
         # Sample actions
-        value, action = actor_critic.act(Variable(rollouts.observations[step], volatile=True))
+        if head == -1: #teacher
+            value, action = actor_critic.act(Variable(storage['rollouts'].observations[step], volatile=True))
+        else:
+            value, action = actor_critic.act(Variable(storage['rollouts'].observations[step], volatile=True), head)
         cpu_actions = action.data.squeeze(1).cpu().numpy()
 
         # Obser reward and next obs
         obs, reward, done, info = env.step(cpu_actions)
         reward = torch.from_numpy(np.expand_dims(np.stack(reward), 1)).float()
-        episode_rew += reward
+        storage['episode_rewards'] += reward
 
         # If done then clean the history of observations.
         masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
-        final_rew *= masks
-        final_rew += (1 - masks) * episode_rew
-        episode_rew *= masks
+        storage['final_rewards'] *= masks
+        storage['final_rewards'] += (1 - masks) * storage['episode_rewards']
+        storage['episode_rewards'] *= masks
 
         if args.cuda:
             masks = masks.cuda()
 
-        if curr_obs.dim() == 4:
-            curr_obs *= masks.unsqueeze(2).unsqueeze(2)
+        if storage['current_obs'].dim() == 4:
+            storage['current_obs'] *= masks.unsqueeze(2).unsqueeze(2)
         else:
-            curr_obs *= masks
+            storage['current_obs'] *= masks
 
-        curr_obs = update_current_obs(obs, curr_obs, env)
-        rollouts.insert(step, curr_obs, action.data, value.data, reward, masks)
-    return rollouts, episode_rew, final_rew, curr_obs
+        storage['current_obs'] = update_current_obs(obs, storage['current_obs'], env)
+        storage['rollouts'].insert(step, storage['current_obs'], action.data, value.data, reward, masks)
 
 
 def get_storage(env, num_steps, num_processes, obs_shape, action_space):
@@ -227,7 +236,11 @@ def get_storage(env, num_steps, num_processes, obs_shape, action_space):
     obs = env.reset()
     current_obs = update_current_obs(obs, current_obs, env)
     rollouts.observations[0].copy_(current_obs)
-    return rollouts, episode_rewards, final_rewards, current_obs
+    storage = {'rollouts':rollouts,
+                'episode_rewards':episode_rewards,
+                'final_rewards': final_rewards,
+                'current_obs': current_obs}
+    return storage
 
 
 def update_current_obs(obs, current_obs, env):
@@ -251,46 +264,49 @@ def make_dir(path):
 if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = '1'
 
-    make_dir(log_dir_teacher)
-    make_dir(log_dir_student_train)
-    make_dir(log_dir_student_test)
+    for i in range(args.num_heads):
+        make_dir(log_dir_teacher[i])
+        make_dir(log_dir_student_train[i])
+        make_dir(log_dir_student_test[i])
 
-    envs_student_train = SubprocVecEnv([
-        make_env(args.env_name, args.seed, i, log_dir_student_train)
+    envs_student_train = [SubprocVecEnv([
+        make_env(args.env_name[j], args.seed, i, log_dir_student_train[j])
         for i in range(args.num_processes)
-    ])
+    ]) for j in range(args.num_heads)]
 
-    envs_student_test = SubprocVecEnv([
-        make_env(args.env_name, args.seed, i, log_dir_student_test)
+    envs_student_test = [SubprocVecEnv([
+        make_env(args.env_name[j], args.seed, i, log_dir_student_test[j])
         for i in range(args.num_processes)
-    ])
+    ]) for j in range(args.num_heads)]
 
-    envs_teacher = SubprocVecEnv([
-        make_env(args.env_name, args.seed, i, log_dir_teacher)
+    envs_teacher = [SubprocVecEnv([
+        make_env(args.env_name[j], args.seed, i, log_dir_teacher[j])
         for i in range(args.num_processes)
-    ])
+    ]) for j in range(args.num_heads)]
 
-    obs_shape = envs_teacher.observation_space.shape
+    obs_shape = envs_teacher[0].observation_space.shape
     obs_shape = (obs_shape[0] * args.num_stack, *obs_shape[1:])
 
-    if len(envs_teacher.observation_space.shape) == 3:
+    if len(envs_teacher[0].observation_space.shape) == 3:
         teacher = CNNPolicy(obs_shape[0], envs_teacher.action_space)
         # TODO: change student
         student = CNNPolicy(obs_shape[0], envs_student_train.action_space)
     else:
-        teacher = MLPPolicy(obs_shape[0], envs_teacher.action_space)
+        teacher = [MLPPolicy(obs_shape[0], envs_teacher[i].action_space) for i in range(args.num_heads)]
         # TODO: change student
-        student = MLPPolicy(obs_shape[0], envs_student_train.action_space)
+        student = MultiHead_MLPPolicy(obs_shape[0], envs_student_train[0].action_space, num_heads = args.num_heads)
 
     # load teacher model from checkpoint
-    assert os.path.exists(args.checkpoint)
-    state_dict = torch.load(args.checkpoint)
-    print('Loading teacher network from : %s'%args.checkpoint)
-    teacher.load_state_dict(state_dict['model_state_dict'])
+    for i in range(args.num_heads):
+        assert os.path.exists(args.checkpoint[i])
+        state_dict = torch.load(args.checkpoint[i])
+        print('Loading teacher network from : %s'%args.checkpoint[i])
+        teacher[i].load_state_dict(state_dict['model_state_dict'])
 
     if args.cuda:
         student.cuda()
-        teacher.cuda()
+        for i in range(args.num_heads):
+            teacher[i].cuda()
 
     # TODO: will probably need to tune defaults since they were for other algos
     # may need filter(lambda p: p.requires_grad,actor_critic.parameters()
